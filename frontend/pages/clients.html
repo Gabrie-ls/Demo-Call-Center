@@ -168,7 +168,7 @@ const debounceSearch = () => {
 
 const loadAgents = async () => {
   try {
-    const { data } = await api.get('/users/agents');
+    const { data } = await api.get('/api/users/agents');
     agents = data;
     const agentFilter = document.getElementById('agent-filter');
     const agentSelect = document.getElementById('c-agent');
@@ -188,7 +188,7 @@ const loadClients = async () => {
     if (search) params.set('search', search);
     if (status) params.set('status', status);
     if (agentId) params.set('agent_id', agentId);
-    const { data, meta } = await api.get(`/clients?${params}`);
+    const { data, meta } = await api.get(`/api/clients?${params}`);
     clients = data; totalPages = meta.pages;
     renderTable(data, meta);
   } catch (err) {
@@ -275,8 +275,8 @@ const saveClient = async () => {
   };
   if (!body.name || !body.phone) return Toast.error('Validación', 'Nombre y teléfono son obligatorios');
   try {
-    if (id) await api.put(`/clients/${id}`, body);
-    else await api.post('/clients', body);
+    if (id) await api.put(`/api/clients/${id}`, body);
+    else await api.post('/api/clients', body);
     Toast.success('Éxito', id ? 'Cliente actualizado' : 'Cliente creado');
     Modal.close('client-modal');
     loadClients();
@@ -286,7 +286,7 @@ const saveClient = async () => {
 const deleteClient = async (id, name) => {
   if (!confirm(`¿Eliminar cliente "${name}"?`)) return;
   try {
-    await api.delete(`/clients/${id}`);
+    await api.delete(`/api/clients/${id}`);
     Toast.success('Eliminado', `Cliente "${name}" eliminado`);
     loadClients();
   } catch (err) { Toast.error('Error', err.message); }
@@ -294,8 +294,8 @@ const deleteClient = async (id, name) => {
 
 const viewDetail = async (id) => {
   try {
-    const { data: c } = await api.get(`/clients/${id}`);
-    const { data: interactions } = await api.get(`/interactions/client/${id}`);
+    const { data: c } = await api.get(`/api/clients/${id}`);
+    const { data: interactions } = await api.get(`/api/interactions/client/${id}`);
     const typeIcon = { call:'📞', note:'📝', email:'📧', meeting:'🤝' };
     document.getElementById('detail-title').textContent = c.name;
     document.getElementById('detail-body').innerHTML = `
@@ -344,7 +344,7 @@ const viewDetail = async (id) => {
 // ── Import ────────────────────────────────────────────────────
 const downloadTemplate = async () => {
   try {
-    const blob = await api.get('/clients/template');
+    const blob = await api.get('/api/clients/template');
     downloadBlob(blob, 'plantilla_clientes.xlsx');
     Toast.success('Descarga', 'Plantilla descargada');
   } catch (err) { Toast.error('Error', err.message); }
@@ -365,7 +365,7 @@ const doImport = async () => {
   const btn = document.getElementById('import-btn');
   btn.textContent = 'Importando...'; btn.disabled = true;
   try {
-    const res = await api.upload('/clients/import/excel', form);
+    const res = await api.upload('/api/clients/import/excel', form);
     const errorsHtml = res.errors?.length
       ? `<div class="alert alert-danger" style="margin-top:10px;max-height:150px;overflow:auto;">
           <div><strong>Errores (${res.errors.length}):</strong></div>
