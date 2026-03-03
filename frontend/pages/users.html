@@ -110,7 +110,7 @@ const switchTab = (tab, btn) => {
 
 const loadSupervisors = async () => {
   try {
-    const { data } = await api.get('/users?role=supervisor&status=active');
+    const { data } = await api.get('/api/users?role=supervisor&status=active');
     supervisors = data;
     const sel = document.getElementById('u-supervisor');
     if (sel) sel.innerHTML = '<option value="">Sin supervisor</option>' + data.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
@@ -125,7 +125,7 @@ const loadUsers = async () => {
   const status = document.getElementById('f-status')?.value;
   if (status) params.set('status', status);
   try {
-    const { data } = await api.get(`/users?${params}`);
+    const { data } = await api.get(`/api/users?${params}`);
     users = data;
     renderTable(data);
   } catch (err) { Toast.error('Error', err.message); }
@@ -214,8 +214,8 @@ const saveUser = async () => {
   if (!body.name || !body.email) return Toast.error('Validación', 'Nombre y email son obligatorios');
   if (!id && !body.password) return Toast.error('Validación', 'La contraseña es obligatoria');
   try {
-    if (id) await api.put(`/users/${id}`, body);
-    else await api.post('/users', body);
+    if (id) await api.put(`/api/users/${id}`, body);
+    else await api.post('/api/users', body);
     Toast.success('Éxito', id ? 'Usuario actualizado' : 'Usuario creado');
     Modal.close('user-modal');
     loadUsers();
@@ -224,7 +224,7 @@ const saveUser = async () => {
 
 const toggleStatus = async (id) => {
   try {
-    const { data } = await api.patch(`/users/${id}/toggle-status`, {});
+    const { data } = await api.patch(`/api/users/${id}/toggle-status`, {});
     Toast.success('Estado actualizado', `Usuario ${data.status === 'active' ? 'activado' : 'desactivado'}`);
     loadUsers();
   } catch (err) { Toast.error('Error', err.message); }
@@ -232,7 +232,7 @@ const toggleStatus = async (id) => {
 
 const deleteUser = async (id, name) => {
   if (!confirm(`¿Eliminar usuario "${name}"?`)) return;
-  try { await api.delete(`/users/${id}`); Toast.success('Eliminado', ''); loadUsers(); }
+  try { await api.delete(`/api/users/${id}`); Toast.success('Eliminado', ''); loadUsers(); }
   catch (err) { Toast.error('Error', err.message); }
 };
 
