@@ -108,7 +108,7 @@ const render = () => {
 
 const loadAgents = async () => {
   try {
-    const { data } = await api.get('/users/agents');
+    const { data } = await api.get('/api/users/agents');
     const sel = document.getElementById('r-agent');
     sel.innerHTML = '<option value="">Todos los agentes</option>' + data.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
   } catch(e) {}
@@ -127,7 +127,7 @@ const exportReport = async (type, format) => {
   logEl.innerHTML = '<div class="alert alert-info">⏳ Generando reporte, espera un momento...</div>';
 
   try {
-    const url = `/reports/${type}/${format}?${params}`;
+    const url = `/api/reports/${type}/${format}?${params}`;
     const blob = await api.get(url);
     const ext = format === 'excel' ? 'xlsx' : 'pdf';
     const filename = `${type}_${new Date().toISOString().split('T')[0]}.${ext}`;
@@ -144,7 +144,7 @@ const loadQuickStats = async () => {
   const el = document.getElementById('quick-stats');
   el.innerHTML = '<div class="loading"><div class="spinner"></div> Cargando...</div>';
   try {
-    const { data } = await api.get('/dashboard/metrics');
+    const { data } = await api.get('/api/dashboard/metrics');
     const t = data.today;
     el.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;padding:8px 0;">
