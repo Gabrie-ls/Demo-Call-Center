@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reportes — CallCenter Pro</title>
+  <link rel="stylesheet" href="../assets/css/main.css">
+</head>
+<body>
+<div class="app-layout" id="app"></div>
+<script src="../assets/js/app.js"></script>
+<script src="../assets/js/sidebar.js"></script>
+<script>
+if (!requireAuth()) throw '';
+if (!canAccess('admin','supervisor')) { window.location.href='/pages/dashboard.html'; throw ''; }
+
+const render = () => {
+  document.getElementById('app').innerHTML = `
+    ${buildSidebar('reports')}
+    <div class="main-content">
+      <div class="topbar">
+        <div class="topbar-title">Reportes y Exportaciones</div>
+      </div>
+      <div class="page-content">
+
+        <!-- Filters -->
+        <div class="card mb-24">
+          <div class="card-header"><div class="card-title">Filtros Globales</div></div>
+          <div class="form-row">
+            <div class="form-group mb-0">
+              <label class="form-label">Fecha desde</label>
+              <input type="date" id="r-from" class="form-control">
+            </div>
+            <div class="form-group mb-0">
+              <label class="form-label">Fecha hasta</label>
+              <input type="date" id="r-to" class="form-control">
+            </div>
+            <div class="form-group mb-0">
+              <label class="form-label">Agente (llamadas)</label>
+              <select id="r-agent" class="form-control"><option value="">Todos</option></select>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+
+          <!-- Calls Report -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">📞 Reporte de Llamadas</div>
+                <div class="card-subtitle">Historial por rango de fecha</div>
+              </div>
+            </div>
+            <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:20px;">
+              Exporta el historial completo de llamadas con filtros por fecha, agente y resultado. Incluye cliente, duración, estado y notas.
+            </p>
+            <div class="d-flex gap-12">
+              <button class="btn btn-secondary" onclick="exportReport('calls','excel')">
+                📊 Exportar Excel
+              </button>
+              <button class="btn btn-secondary" onclick="exportReport('calls','pdf')">
+                📄 Exportar PDF
+              </button>
+            </div>
+          </div>
+
+          <!-- Productivity Report -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title">🏆 Reporte de Productividad</div>
+                <div class="card-subtitle">Rendimiento por agente</div>
+              </div>
+            </div>
+            <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:20px;">
+              Análisis de rendimiento por agente: total llamadas, ventas cerradas, tasa de conversión y duración promedio de llamada.
+            </p>
+            <div class="d-flex gap-12">
+              <button class="btn btn-secondary" onclick="exportReport('productivity','excel')">
+                📊 Exportar Excel
+              </button>
+              <button class="btn btn-secondary" onclick="exportReport('productivity','pdf')">
+                📄 Exportar PDF
+              </button>
+            </div>
+          </div>
+
+          <!-- Quick Stats Card -->
+          <div class="card" style="grid-column:1/-1;">
+            <div class="card-header">
+              <div class="card-title">📈 Resumen Rápido</div>
+              <button class="btn btn-secondary btn-sm" onclick="loadQuickStats()">🔄 Cargar</button>
+            </div>
+            <div id="quick-stats">
+              <div class="empty-state"><div class="empty-icon">📊</div><div class="empty-text">Haz clic en "Cargar" para ver el resumen</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Export log -->
+        <div id="export-log" style="margin-top:16px;"></div>
+      </div>
+    </div>
+  `;
+  populateUserSidebar();
+  loadAgents();
+};
+
+const loadAgents = async () => {
+  try {
+    const { data } = await api.get('/users/agents');
+    const sel = document.getElementById('r-agent');
+    sel.innerHTML = '<option value="">Todos los agentes</option>' + data.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+  } catch(e) {}
+};
+
+const exportReport = async (type, format) => {
+  const from  = document.getElementById('r-from').value;
+  const to    = document.getElementById('r-to').value;
+  const agent = document.getElementById('r-agent').value;
+  const params = new URLSearchParams();
+  if (from) params.set('date_from', from);
+  if (to) params.set('date_to', to);
+  if (agent && type === 'calls') params.set('agent_id', agent);
+
+  const logEl = document.getElementById('export-log');
+  logEl.innerHTML = '<div class="alert alert-info">⏳ Generando reporte, espera un momento...</div>';
+
+  try {
+    const url = `/reports/${type}/${format}?${params}`;
+    const blob = await api.get(url);
+    const ext = format === 'excel' ? 'xlsx' : 'pdf';
+    const filename = `${type}_${new Date().toISOString().split('T')[0]}.${ext}`;
+    downloadBlob(blob, filename);
+    logEl.innerHTML = `<div class="alert alert-success">✅ Reporte "${filename}" descargado exitosamente</div>`;
+    Toast.success('Reporte listo', `${filename} descargado`);
+  } catch (err) {
+    logEl.innerHTML = `<div class="alert alert-danger">❌ Error: ${err.message}</div>`;
+    Toast.error('Error de exportación', err.message);
+  }
+};
+
+const loadQuickStats = async () => {
+  const el = document.getElementById('quick-stats');
+  el.innerHTML = '<div class="loading"><div class="spinner"></div> Cargando...</div>';
+  try {
+    const { data } = await api.get('/dashboard/metrics');
+    const t = data.today;
+    el.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;padding:8px 0;">
+        ${[
+          ['📞 Llamadas Hoy', t.total, 'blue'],
+          ['✅ Finalizadas', t.finished, 'green'],
+          ['💰 Ventas', t.sales, 'green'],
+          ['📊 Tasa Conv.', t.conversion_rate + '%', 'orange'],
+          ['👥 Clientes', data.clients.total, 'purple'],
+          ['⭐ Interesados', data.clients.interested, 'blue'],
+        ].map(([label, value, color]) => `
+          <div class="metric-card ${color}" style="padding:14px;">
+            <div class="metric-value" style="font-size:1.6rem">${value}</div>
+            <div class="metric-label">${label}</div>
+          </div>
+        `).join('')}
+      </div>
+      <div style="margin-top:12px;">
+        <div class="form-label" style="margin-bottom:8px;">Top Agentes Hoy</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          ${data.byAgent.slice(0,5).map(a => `
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--bg-elevated);border-radius:6px;">
+              <div class="agent-ava" style="width:28px;height:28px;font-size:0.65rem;">${initials(a.agent_name)}</div>
+              <div style="flex:1;font-size:0.82rem;">${a.agent_name}</div>
+              <div style="font-family:var(--font-mono);font-size:0.8rem;color:var(--accent)">${a.total_calls} llamadas</div>
+              <div style="font-family:var(--font-mono);font-size:0.8rem;color:var(--success)">${a.sales} ventas</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    el.innerHTML = `<div class="alert alert-danger">Error: ${err.message}</div>`;
+  }
+};
+
+render();
+</script>
+</body>
+</html>

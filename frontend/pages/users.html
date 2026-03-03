@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Usuarios — CallCenter Pro</title>
+  <link rel="stylesheet" href="../assets/css/main.css">
+</head>
+<body>
+<div class="app-layout" id="app"></div>
+
+<div class="modal-overlay" id="user-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="user-modal-title">Nuevo Usuario</div>
+      <button class="modal-close" onclick="Modal.close('user-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="user-id">
+      <div class="form-row">
+        <div class="form-group mb-0"><label class="form-label">Nombre completo *</label><input id="u-name" class="form-control" placeholder="Juan Pérez"></div>
+        <div class="form-group mb-0"><label class="form-label">Email *</label><input id="u-email" type="email" class="form-control" placeholder="juan@callcenter.com"></div>
+      </div>
+      <div class="form-row" style="margin-top:16px;">
+        <div class="form-group mb-0">
+          <label class="form-label">Rol *</label>
+          <select id="u-role" class="form-control" onchange="toggleSupervisorField()">
+            <option value="agent">Agente</option>
+            <option value="supervisor">Supervisor</option>
+            <option value="admin">Administrador</option>
+          </select>
+        </div>
+        <div class="form-group mb-0"><label class="form-label">Teléfono</label><input id="u-phone" class="form-control" placeholder="+51 999 000 111"></div>
+      </div>
+      <div class="form-group" style="margin-top:16px;" id="supervisor-field">
+        <label class="form-label">Supervisor asignado</label>
+        <select id="u-supervisor" class="form-control"><option value="">Sin supervisor</option></select>
+      </div>
+      <div class="form-group" id="password-field">
+        <label class="form-label">Contraseña <span id="pass-req">*</span></label>
+        <input id="u-password" type="password" class="form-control" placeholder="Mínimo 6 caracteres">
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="Modal.close('user-modal')">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveUser()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/js/app.js"></script>
+<script src="../assets/js/sidebar.js"></script>
+<script>
+if (!requireAuth()) throw '';
+if (!canAccess('admin','supervisor')) { window.location.href='/pages/dashboard.html'; throw ''; }
+
+let users = [], supervisors = [];
+const ROLE_LABELS = { admin:'Administrador', supervisor:'Supervisor', agent:'Agente' };
+
+const render = () => {
+  document.getElementById('app').innerHTML = `
+    ${buildSidebar('users')}
+    <div class="main-content">
+      <div class="topbar">
+        <div class="topbar-title">Gestión de Agentes y Usuarios</div>
+        <div class="topbar-actions">
+          <button class="btn btn-primary" onclick="openCreate()" data-role="admin">+ Nuevo Usuario</button>
+        </div>
+      </div>
+      <div class="page-content">
+        <div class="tabs">
+          <button class="tab-btn active" onclick="switchTab('all', this)">Todos</button>
+          <button class="tab-btn" onclick="switchTab('agent', this)">Agentes</button>
+          <button class="tab-btn" onclick="switchTab('supervisor', this)">Supervisores</button>
+          <button class="tab-btn" onclick="switchTab('admin', this)">Admins</button>
+        </div>
+        <div class="card">
+          <div class="filter-bar">
+            <select class="filter-select" id="f-status" onchange="loadUsers()">
+              <option value="">Todos los estados</option>
+              <option value="active">Activos</option>
+              <option value="inactive">Inactivos</option>
+            </select>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead><tr>
+                <th>Usuario</th><th>Rol</th><th>Supervisor</th>
+                <th>Teléfono</th><th>Estado</th><th>Registrado</th><th>Acciones</th>
+              </tr></thead>
+              <tbody id="users-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  populateUserSidebar();
+  applyRoleVisibility();
+  loadUsers();
+  loadSupervisors();
+};
+
+let activeTab = 'all';
+const switchTab = (tab, btn) => {
+  activeTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadUsers();
+};
+
+const loadSupervisors = async () => {
+  try {
+    const { data } = await api.get('/users?role=supervisor&status=active');
+    supervisors = data;
+    const sel = document.getElementById('u-supervisor');
+    if (sel) sel.innerHTML = '<option value="">Sin supervisor</option>' + data.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  } catch(e) {}
+};
+
+const loadUsers = async () => {
+  const tbody = document.getElementById('users-tbody');
+  tbody.innerHTML = '<tr><td colspan="7"><div class="loading"><div class="spinner"></div></div></td></tr>';
+  const params = new URLSearchParams();
+  if (activeTab !== 'all') params.set('role', activeTab);
+  const status = document.getElementById('f-status')?.value;
+  if (status) params.set('status', status);
+  try {
+    const { data } = await api.get(`/users?${params}`);
+    users = data;
+    renderTable(data);
+  } catch (err) { Toast.error('Error', err.message); }
+};
+
+const renderTable = (data) => {
+  const tbody = document.getElementById('users-tbody');
+  const me = Auth.getUser();
+  if (!data.length) {
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">🧑‍💼</div><div class="empty-text">No hay usuarios</div></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.map(u => `
+    <tr>
+      <td>
+        <div class="d-flex align-center gap-8">
+          <div class="agent-ava" style="width:32px;height:32px;font-size:0.7rem">${initials(u.name)}</div>
+          <div>
+            <div class="td-main">${u.name}</div>
+            <div style="font-size:0.72rem;color:var(--text-muted)">${u.email}</div>
+          </div>
+        </div>
+      </td>
+      <td>${badge(u.role, ROLE_LABELS[u.role])}</td>
+      <td style="font-size:0.82rem">${u.supervisor_name||'<span style="color:var(--text-muted)">—</span>'}</td>
+      <td class="font-mono" style="font-size:0.8rem">${u.phone||'—'}</td>
+      <td>${badge(u.status, u.status==='active'?'Activo':'Inactivo')}</td>
+      <td style="font-size:0.78rem;color:var(--text-muted)">${fmtDate(u.created_at)}</td>
+      <td>
+        <div class="d-flex gap-8" data-role="admin">
+          <button class="btn btn-secondary btn-sm btn-icon" onclick="openEdit('${u.id}')" title="Editar" ${u.id===me.id?'disabled':''}>✏️</button>
+          <button class="btn ${u.status==='active'?'btn-danger':'btn-success'} btn-sm" onclick="toggleStatus('${u.id}')" ${u.id===me.id?'disabled':''}>
+            ${u.status==='active'?'Desactivar':'Activar'}
+          </button>
+          <button class="btn btn-danger btn-sm btn-icon" onclick="deleteUser('${u.id}','${u.name}')" title="Eliminar" ${u.id===me.id?'disabled':''}>🗑</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+  applyRoleVisibility();
+};
+
+const toggleSupervisorField = () => {
+  const role = document.getElementById('u-role').value;
+  const sf = document.getElementById('supervisor-field');
+  sf.style.display = role === 'agent' ? '' : 'none';
+};
+
+const openCreate = () => {
+  document.getElementById('user-modal-title').textContent = 'Nuevo Usuario';
+  document.getElementById('user-id').value = '';
+  ['u-name','u-email','u-phone','u-password'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('u-role').value = 'agent';
+  document.getElementById('u-supervisor').value = '';
+  document.getElementById('pass-req').style.display = '';
+  toggleSupervisorField();
+  Modal.open('user-modal');
+};
+
+const openEdit = (id) => {
+  const u = users.find(x => x.id === id);
+  if (!u) return;
+  document.getElementById('user-modal-title').textContent = 'Editar Usuario';
+  document.getElementById('user-id').value = u.id;
+  document.getElementById('u-name').value = u.name;
+  document.getElementById('u-email').value = u.email;
+  document.getElementById('u-role').value = u.role;
+  document.getElementById('u-phone').value = u.phone||'';
+  document.getElementById('u-supervisor').value = u.supervisor_id||'';
+  document.getElementById('u-password').value = '';
+  document.getElementById('pass-req').style.display = 'none';
+  toggleSupervisorField();
+  Modal.open('user-modal');
+};
+
+const saveUser = async () => {
+  const id = document.getElementById('user-id').value;
+  const body = {
+    name: document.getElementById('u-name').value.trim(),
+    email: document.getElementById('u-email').value.trim(),
+    role: document.getElementById('u-role').value,
+    phone: document.getElementById('u-phone').value.trim(),
+    supervisor_id: document.getElementById('u-supervisor').value || null,
+    password: document.getElementById('u-password').value,
+  };
+  if (!body.name || !body.email) return Toast.error('Validación', 'Nombre y email son obligatorios');
+  if (!id && !body.password) return Toast.error('Validación', 'La contraseña es obligatoria');
+  try {
+    if (id) await api.put(`/users/${id}`, body);
+    else await api.post('/users', body);
+    Toast.success('Éxito', id ? 'Usuario actualizado' : 'Usuario creado');
+    Modal.close('user-modal');
+    loadUsers();
+  } catch (err) { Toast.error('Error', err.message); }
+};
+
+const toggleStatus = async (id) => {
+  try {
+    const { data } = await api.patch(`/users/${id}/toggle-status`, {});
+    Toast.success('Estado actualizado', `Usuario ${data.status === 'active' ? 'activado' : 'desactivado'}`);
+    loadUsers();
+  } catch (err) { Toast.error('Error', err.message); }
+};
+
+const deleteUser = async (id, name) => {
+  if (!confirm(`¿Eliminar usuario "${name}"?`)) return;
+  try { await api.delete(`/users/${id}`); Toast.success('Eliminado', ''); loadUsers(); }
+  catch (err) { Toast.error('Error', err.message); }
+};
+
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clientes CRM — CallCenter Pro</title>
+  <link rel="stylesheet" href="../assets/css/main.css">
+</head>
+<body>
+<div class="app-layout" id="app"></div>
+
+<!-- Client Modal -->
+<div class="modal-overlay" id="client-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">Nuevo Cliente</div>
+      <button class="modal-close" onclick="Modal.close('client-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="client-id">
+      <div class="form-row">
+        <div class="form-group mb-0">
+          <label class="form-label">Nombre *</label>
+          <input id="c-name" class="form-control" placeholder="Empresa o persona">
+        </div>
+        <div class="form-group mb-0">
+          <label class="form-label">Empresa</label>
+          <input id="c-company" class="form-control" placeholder="Razón social">
+        </div>
+      </div>
+      <div class="form-row" style="margin-top:16px;">
+        <div class="form-group mb-0">
+          <label class="form-label">Teléfono *</label>
+          <input id="c-phone" class="form-control" placeholder="+51 999 000 111">
+        </div>
+        <div class="form-group mb-0">
+          <label class="form-label">Email</label>
+          <input id="c-email" type="email" class="form-control" placeholder="contacto@empresa.com">
+        </div>
+      </div>
+      <div class="form-row" style="margin-top:16px;">
+        <div class="form-group mb-0">
+          <label class="form-label">Estado</label>
+          <select id="c-status" class="form-control">
+            <option value="new">Nuevo</option>
+            <option value="contacted">Contactado</option>
+            <option value="interested">Interesado</option>
+            <option value="closed">Cerrado</option>
+            <option value="lost">Perdido</option>
+          </select>
+        </div>
+        <div class="form-group mb-0">
+          <label class="form-label">Agente asignado</label>
+          <select id="c-agent" class="form-control"><option value="">Sin asignar</option></select>
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:16px;">
+        <label class="form-label">Notas</label>
+        <textarea id="c-notes" class="form-control" rows="3" placeholder="Observaciones..."></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="Modal.close('client-modal')">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveClient()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Import Modal -->
+<div class="modal-overlay" id="import-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Importar Clientes desde Excel</div>
+      <button class="modal-close" onclick="Modal.close('import-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info">
+        📋 El archivo debe seguir el formato oficial. <a href="#" onclick="downloadTemplate()">Descargar plantilla</a>
+      </div>
+      <div class="upload-zone" id="upload-zone" onclick="document.getElementById('excel-file').click()">
+        <div class="upload-icon">📂</div>
+        <div class="upload-text">Haz clic o arrastra el archivo Excel aquí</div>
+        <div class="upload-hint">Formatos: .xlsx, .xls — Máx. 10MB</div>
+      </div>
+      <input type="file" id="excel-file" accept=".xlsx,.xls" style="display:none" onchange="handleFileSelect(event)">
+      <div id="import-result" style="margin-top:16px;"></div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="Modal.close('import-modal')">Cancelar</button>
+        <button class="btn btn-primary" id="import-btn" onclick="doImport()" disabled>Importar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal-overlay" id="detail-modal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div class="modal-title" id="detail-title">Detalle de Cliente</div>
+      <button class="modal-close" onclick="Modal.close('detail-modal')">✕</button>
+    </div>
+    <div class="modal-body" id="detail-body"></div>
+  </div>
+</div>
+
+<script src="../assets/js/app.js"></script>
+<script src="../assets/js/sidebar.js"></script>
+<script>
+if (!requireAuth()) throw '';
+
+let clients = [], agents = [], currentPage = 1, totalPages = 1, selectedFile = null;
+const STATUS_LABELS = { new:'Nuevo', contacted:'Contactado', interested:'Interesado', closed:'Cerrado', lost:'Perdido' };
+
+const render = () => {
+  document.getElementById('app').innerHTML = `
+    ${buildSidebar('clients')}
+    <div class="main-content">
+      <div class="topbar">
+        <div class="topbar-title">CRM — Gestión de Clientes</div>
+        <div class="topbar-actions">
+          <button class="btn btn-secondary" onclick="Modal.open('import-modal')" data-role="admin,supervisor">📥 Importar Excel</button>
+          <button class="btn btn-primary" onclick="openCreate()">+ Nuevo Cliente</button>
+        </div>
+      </div>
+      <div class="page-content">
+        <div class="card">
+          <div class="filter-bar">
+            <div class="search-box">
+              <span class="search-icon">🔍</span>
+              <input placeholder="Buscar por nombre, teléfono, email..." id="search-input" oninput="debounceSearch()">
+            </div>
+            <select class="filter-select" id="status-filter" onchange="loadClients()">
+              <option value="">Todos los estados</option>
+              <option value="new">Nuevo</option>
+              <option value="contacted">Contactado</option>
+              <option value="interested">Interesado</option>
+              <option value="closed">Cerrado</option>
+              <option value="lost">Perdido</option>
+            </select>
+            <select class="filter-select" id="agent-filter" onchange="loadClients()">
+              <option value="">Todos los agentes</option>
+            </select>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead><tr>
+                <th>Cliente</th><th>Teléfono</th><th>Empresa</th>
+                <th>Estado</th><th>Agente</th><th>Registrado</th><th>Acciones</th>
+              </tr></thead>
+              <tbody id="clients-tbody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="pagination"></div>
+        </div>
+      </div>
+    </div>
+  `;
+  populateUserSidebar();
+  applyRoleVisibility();
+  loadAgents();
+  loadClients();
+};
+
+let searchTimeout;
+const debounceSearch = () => {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(loadClients, 400);
+};
+
+const loadAgents = async () => {
+  try {
+    const { data } = await api.get('/users/agents');
+    agents = data;
+    const agentFilter = document.getElementById('agent-filter');
+    const agentSelect = document.getElementById('c-agent');
+    if (agentFilter) agentFilter.innerHTML = '<option value="">Todos los agentes</option>' + data.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+    if (agentSelect) agentSelect.innerHTML = '<option value="">Sin asignar</option>' + data.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+  } catch(e) {}
+};
+
+const loadClients = async () => {
+  const search = document.getElementById('search-input')?.value || '';
+  const status = document.getElementById('status-filter')?.value || '';
+  const agentId = document.getElementById('agent-filter')?.value || '';
+  const tbody = document.getElementById('clients-tbody');
+  tbody.innerHTML = '<tr><td colspan="7"><div class="loading"><div class="spinner"></div> Cargando...</div></td></tr>';
+  try {
+    const params = new URLSearchParams({ page: currentPage, limit: 15 });
+    if (search) params.set('search', search);
+    if (status) params.set('status', status);
+    if (agentId) params.set('agent_id', agentId);
+    const { data, meta } = await api.get(`/clients?${params}`);
+    clients = data; totalPages = meta.pages;
+    renderTable(data, meta);
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">❌</div><div class="empty-text">Error al cargar clientes</div></div></td></tr>';
+  }
+};
+
+const renderTable = (data, meta) => {
+  const tbody = document.getElementById('clients-tbody');
+  if (!data.length) {
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">👥</div><div class="empty-text">No se encontraron clientes</div></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.map(c => `
+    <tr>
+      <td><div class="td-main">${c.name}</div><div style="font-size:0.72rem;color:var(--text-muted)">${c.email||''}</div></td>
+      <td class="font-mono">${c.phone}</td>
+      <td>${c.company||'—'}</td>
+      <td>${badge(c.status, STATUS_LABELS[c.status])}</td>
+      <td>${c.agent_name ? `<span style="font-size:0.8rem">${c.agent_name}</span>` : '<span style="color:var(--text-muted);font-size:0.75rem">Sin asignar</span>'}</td>
+      <td style="font-size:0.8rem;color:var(--text-muted)">${fmtDate(c.created_at)}</td>
+      <td>
+        <div class="d-flex gap-8">
+          <button class="btn btn-secondary btn-sm btn-icon" onclick="viewDetail('${c.id}')" title="Ver detalle">👁</button>
+          <button class="btn btn-secondary btn-sm btn-icon" onclick="openEdit('${c.id}')" title="Editar">✏️</button>
+          <button class="btn btn-danger btn-sm btn-icon" onclick="deleteClient('${c.id}','${c.name}')" title="Eliminar" data-role="admin,supervisor">🗑</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+  renderPagination(meta);
+  applyRoleVisibility();
+};
+
+const renderPagination = (meta) => {
+  const pg = document.getElementById('pagination');
+  pg.innerHTML = `
+    <span class="pagination-info">${meta.total} clientes total</span>
+    <button class="page-btn" onclick="goPage(${currentPage-1})" ${currentPage<=1?'disabled':''}>‹</button>
+    ${Array.from({length:Math.min(5,meta.pages)},(_,i)=>{
+      const p = i+1; return `<button class="page-btn ${p===currentPage?'active':''}" onclick="goPage(${p})">${p}</button>`;
+    }).join('')}
+    <button class="page-btn" onclick="goPage(${currentPage+1})" ${currentPage>=meta.pages?'disabled':''}>›</button>
+  `;
+};
+
+const goPage = (p) => { currentPage = Math.max(1, Math.min(p, totalPages)); loadClients(); };
+
+const openCreate = async () => {
+  document.getElementById('modal-title').textContent = 'Nuevo Cliente';
+  document.getElementById('client-id').value = '';
+  ['c-name','c-company','c-phone','c-email','c-notes'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('c-status').value = 'new';
+  document.getElementById('c-agent').value = '';
+  await loadAgents();
+  Modal.open('client-modal');
+};
+
+const openEdit = (id) => {
+  const c = clients.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById('modal-title').textContent = 'Editar Cliente';
+  document.getElementById('client-id').value = c.id;
+  document.getElementById('c-name').value = c.name;
+  document.getElementById('c-company').value = c.company||'';
+  document.getElementById('c-phone').value = c.phone;
+  document.getElementById('c-email').value = c.email||'';
+  document.getElementById('c-status').value = c.status;
+  document.getElementById('c-agent').value = c.assigned_agent_id||'';
+  document.getElementById('c-notes').value = c.notes||'';
+  Modal.open('client-modal');
+};
+
+const saveClient = async () => {
+  const id = document.getElementById('client-id').value;
+  const body = {
+    name: document.getElementById('c-name').value.trim(),
+    phone: document.getElementById('c-phone').value.trim(),
+    email: document.getElementById('c-email').value.trim(),
+    company: document.getElementById('c-company').value.trim(),
+    status: document.getElementById('c-status').value,
+    assigned_agent_id: document.getElementById('c-agent').value || null,
+    notes: document.getElementById('c-notes').value.trim(),
+  };
+  if (!body.name || !body.phone) return Toast.error('Validación', 'Nombre y teléfono son obligatorios');
+  try {
+    if (id) await api.put(`/clients/${id}`, body);
+    else await api.post('/clients', body);
+    Toast.success('Éxito', id ? 'Cliente actualizado' : 'Cliente creado');
+    Modal.close('client-modal');
+    loadClients();
+  } catch (err) { Toast.error('Error', err.message); }
+};
+
+const deleteClient = async (id, name) => {
+  if (!confirm(`¿Eliminar cliente "${name}"?`)) return;
+  try {
+    await api.delete(`/clients/${id}`);
+    Toast.success('Eliminado', `Cliente "${name}" eliminado`);
+    loadClients();
+  } catch (err) { Toast.error('Error', err.message); }
+};
+
+const viewDetail = async (id) => {
+  try {
+    const { data: c } = await api.get(`/clients/${id}`);
+    const { data: interactions } = await api.get(`/interactions/client/${id}`);
+    const typeIcon = { call:'📞', note:'📝', email:'📧', meeting:'🤝' };
+    document.getElementById('detail-title').textContent = c.name;
+    document.getElementById('detail-body').innerHTML = `
+      <div class="grid-2" style="margin-bottom:20px;">
+        <div>
+          <div class="form-label">Contacto</div>
+          <div class="td-main">${c.phone}</div>
+          <div style="color:var(--text-muted);font-size:0.8rem">${c.email||'Sin email'}</div>
+        </div>
+        <div>
+          <div class="form-label">Estado</div>
+          ${badge(c.status, STATUS_LABELS[c.status])}
+        </div>
+        <div>
+          <div class="form-label">Empresa</div>
+          <div>${c.company||'—'}</div>
+        </div>
+        <div>
+          <div class="form-label">Agente</div>
+          <div>${c.agent_name||'Sin asignar'}</div>
+        </div>
+      </div>
+      ${c.notes ? `<div class="alert alert-info" style="margin-bottom:20px;">📋 ${c.notes}</div>` : ''}
+      <div class="form-label">Historial de Interacciones (${interactions.length})</div>
+      <div style="max-height:280px;overflow-y:auto;margin-top:8px;">
+        ${interactions.length ? interactions.map(i => `
+          <div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
+            <span style="font-size:18px">${typeIcon[i.type]||'📌'}</span>
+            <div>
+              <div style="font-size:0.8rem;font-weight:600">${i.user_name}</div>
+              <div style="font-size:0.85rem;margin-top:2px">${i.description}</div>
+              <div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px">${fmtDateTime(i.created_at)}</div>
+            </div>
+          </div>
+        `).join('') : '<div class="empty-state" style="padding:20px;"><div class="empty-icon">💬</div><div>Sin interacciones registradas</div></div>'}
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="Modal.close('detail-modal')">Cerrar</button>
+        <button class="btn btn-primary" onclick="Modal.close('detail-modal');openEdit('${c.id}')">Editar</button>
+      </div>
+    `;
+    Modal.open('detail-modal');
+  } catch (err) { Toast.error('Error', err.message); }
+};
+
+// ── Import ────────────────────────────────────────────────────
+const downloadTemplate = async () => {
+  try {
+    const blob = await api.get('/clients/template');
+    downloadBlob(blob, 'plantilla_clientes.xlsx');
+    Toast.success('Descarga', 'Plantilla descargada');
+  } catch (err) { Toast.error('Error', err.message); }
+};
+
+const handleFileSelect = (e) => {
+  selectedFile = e.target.files[0];
+  if (selectedFile) {
+    document.querySelector('#upload-zone .upload-text').textContent = `📄 ${selectedFile.name}`;
+    document.getElementById('import-btn').disabled = false;
+  }
+};
+
+const doImport = async () => {
+  if (!selectedFile) return;
+  const form = new FormData();
+  form.append('file', selectedFile);
+  const btn = document.getElementById('import-btn');
+  btn.textContent = 'Importando...'; btn.disabled = true;
+  try {
+    const res = await api.upload('/clients/import/excel', form);
+    const errorsHtml = res.errors?.length
+      ? `<div class="alert alert-danger" style="margin-top:10px;max-height:150px;overflow:auto;">
+          <div><strong>Errores (${res.errors.length}):</strong></div>
+          ${res.errors.map(e => `<div>Fila ${e.row}: ${e.message}</div>`).join('')}
+         </div>` : '';
+    document.getElementById('import-result').innerHTML = `
+      <div class="alert alert-success">✅ ${res.inserted} clientes importados correctamente</div>
+      ${errorsHtml}
+    `;
+    loadClients();
+    Toast.success('Importación completa', `${res.inserted} clientes agregados`);
+  } catch (err) {
+    Toast.error('Error de importación', err.message);
+  } finally {
+    btn.textContent = 'Importar'; btn.disabled = false;
+  }
+};
+
+render();
+</script>
+</body>
+</html>

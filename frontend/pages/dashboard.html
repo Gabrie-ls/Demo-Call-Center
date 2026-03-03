@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — CallCenter Pro</title>
+  <link rel="stylesheet" href="../assets/css/main.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="app-layout" id="app"></div>
+<script src="../assets/js/app.js"></script>
+<script src="../assets/js/sidebar.js"></script>
+<script>
+if (!requireAuth()) throw '';
+
+let trendChart, resultsChart, pollInterval;
+
+const render = () => {
+  document.getElementById('app').innerHTML = `
+    ${buildSidebar('dashboard')}
+    <div class="main-content">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title">Dashboard</div>
+          <div style="font-size:0.72rem;color:var(--text-muted);">Actualización automática cada 60s</div>
+        </div>
+        <div class="topbar-actions">
+          <span id="last-update" style="font-size:0.75rem;color:var(--text-muted);font-family:var(--font-mono);"></span>
+          <button class="btn btn-secondary btn-sm" onclick="loadMetrics()">🔄 Actualizar</button>
+        </div>
+      </div>
+      <div class="page-content">
+        <div class="metrics-grid" id="metrics-grid">
+          <div class="loading"><div class="spinner"></div> Cargando métricas...</div>
+        </div>
+        <div class="charts-grid">
+          <div class="card">
+            <div class="card-header">
+              <div><div class="card-title">Tendencia 7 días</div><div class="card-subtitle">Llamadas y ventas</div></div>
+            </div>
+            <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <div><div class="card-title">Resultados hoy</div></div>
+            </div>
+            <div class="chart-wrap"><canvas id="resultsChart"></canvas></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:16px;">
+          <div class="card-header">
+            <div><div class="card-title">Rendimiento por Agente — Hoy</div></div>
+          </div>
+          <div class="agents-grid" id="agents-grid"></div>
+        </div>
+      </div>
+    </div>
+  `;
+  populateUserSidebar();
+  loadMetrics();
+  pollInterval = setInterval(loadMetrics, 60000);
+};
+
+const loadMetrics = async () => {
+  try {
+    const { data } = await api.get('/dashboard/metrics');
+    renderMetrics(data);
+    renderCharts(data);
+    renderAgents(data.byAgent);
+    document.getElementById('last-update').textContent =
+      'Última actualización: ' + new Date().toLocaleTimeString('es-PE');
+  } catch (err) {
+    Toast.error('Error', 'No se pudieron cargar las métricas');
+  }
+};
+
+const renderMetrics = (data) => {
+  const t = data.today;
+  document.getElementById('metrics-grid').innerHTML = `
+    <div class="metric-card blue">
+      <div class="metric-icon">📞</div>
+      <div class="metric-value">${t.total || 0}</div>
+      <div class="metric-label">Llamadas hoy</div>
+    </div>
+    <div class="metric-card green">
+      <div class="metric-icon">💰</div>
+      <div class="metric-value">${t.sales || 0}</div>
+      <div class="metric-label">Ventas hoy</div>
+      <div class="metric-change">Tasa: ${t.conversion_rate || 0}%</div>
+    </div>
+    <div class="metric-card orange">
+      <div class="metric-icon">⏱️</div>
+      <div class="metric-value">${t.in_progress || 0}</div>
+      <div class="metric-label">En progreso</div>
+    </div>
+    <div class="metric-card purple">
+      <div class="metric-icon">👥</div>
+      <div class="metric-value">${data.clients?.total || 0}</div>
+      <div class="metric-label">Clientes totales</div>
+      <div class="metric-change">Interesados: ${data.clients?.interested || 0}</div>
+    </div>
+    <div class="metric-card green">
+      <div class="metric-icon">✅</div>
+      <div class="metric-value">${t.finished || 0}</div>
+      <div class="metric-label">Finalizadas</div>
+    </div>
+    <div class="metric-card blue">
+      <div class="metric-icon">⏳</div>
+      <div class="metric-value">${t.pending || 0}</div>
+      <div class="metric-label">Pendientes</div>
+    </div>
+  `;
+};
+
+const renderCharts = (data) => {
+  const COLORS = {
+    accent: '#38bdf8',
+    success: '#22d3a5',
+    warning: '#fb923c',
+    purple: '#a78bfa',
+    danger: '#f87171',
+  };
+  const chartDefaults = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: '#94a3b8', font: { family: 'DM Sans', size: 11 } } } },
+  };
+
+  // Trend Chart
+  if (trendChart) trendChart.destroy();
+  const trendCtx = document.getElementById('trendChart');
+  if (trendCtx) {
+    const labels = data.trend.map(d => new Date(d.day).toLocaleDateString('es-PE', { day:'2-digit', month:'short' }));
+    trendChart = new Chart(trendCtx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Llamadas', data: data.trend.map(d => d.calls), borderColor: COLORS.accent, backgroundColor: 'rgba(56,189,248,0.08)', tension: 0.4, fill: true, pointBackgroundColor: COLORS.accent },
+          { label: 'Ventas', data: data.trend.map(d => d.sales), borderColor: COLORS.success, backgroundColor: 'rgba(34,211,165,0.08)', tension: 0.4, fill: true, pointBackgroundColor: COLORS.success },
+        ],
+      },
+      options: {
+        ...chartDefaults,
+        scales: {
+          x: { ticks: { color: '#64748b' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+          y: { ticks: { color: '#64748b' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        },
+      },
+    });
+  }
+
+  // Results Doughnut
+  if (resultsChart) resultsChart.destroy();
+  const resCtx = document.getElementById('resultsChart');
+  if (resCtx) {
+    const resultMap = { contacted: 'Contactado', no_answer: 'Sin respuesta', sale: 'Venta', follow_up: 'Seguimiento' };
+    const resultColors = [COLORS.purple, COLORS.danger, COLORS.success, COLORS.warning];
+    resultsChart = new Chart(resCtx, {
+      type: 'doughnut',
+      data: {
+        labels: data.results.map(r => resultMap[r.result] || r.result),
+        datasets: [{ data: data.results.map(r => r.count), backgroundColor: resultColors, borderWidth: 0, hoverOffset: 6 }],
+      },
+      options: {
+        ...chartDefaults,
+        cutout: '70%',
+        plugins: {
+          ...chartDefaults.plugins,
+          legend: { position: 'bottom', labels: { color: '#94a3b8', padding: 16, font: { family: 'DM Sans', size: 11 } } },
+        },
+      },
+    });
+  }
+};
+
+const renderAgents = (agents) => {
+  const grid = document.getElementById('agents-grid');
+  if (!agents?.length) {
+    grid.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-text">Sin datos de agentes hoy</div></div>';
+    return;
+  }
+  grid.innerHTML = agents.map(a => `
+    <div class="agent-metric-card">
+      <div class="agent-ava">${initials(a.agent_name)}</div>
+      <div>
+        <div class="agent-stat-name">${a.agent_name}</div>
+        <div class="agent-stat-detail">Ventas: ${a.sales} | Fin: ${a.finished}</div>
+      </div>
+      <div class="agent-call-count">${a.total_calls}</div>
+    </div>
+  `).join('');
+};
+
+render();
+</script>
+</body>
+</html>

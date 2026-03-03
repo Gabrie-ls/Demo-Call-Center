@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CallCenter Pro — Acceso</title>
+  <link rel="stylesheet" href="../assets/css/main.css">
+</head>
+<body>
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="auth-logo-icon">📞</div>
+      <div>
+        <h1>CallCenter Pro</h1>
+        <span>Enterprise Platform v1.0</span>
+      </div>
+    </div>
+    <div class="auth-title">Iniciar sesión</div>
+    <div class="auth-subtitle">Accede a tu panel de control</div>
+
+    <div id="auth-error" class="auth-error"></div>
+
+    <div class="form-group">
+      <label class="form-label">Correo electrónico</label>
+      <input id="email" type="email" class="form-control" placeholder="usuario@callcenter.com" value="admin@callcenter.com">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Contraseña</label>
+      <input id="password" type="password" class="form-control" placeholder="••••••••" value="password">
+    </div>
+    <button class="btn btn-primary w-100" id="login-btn" onclick="doLogin()" style="margin-top:8px;justify-content:center;">
+      Ingresar al sistema
+    </button>
+
+    <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border);">
+      <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.06em;">Cuentas de demo</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <button class="btn btn-secondary btn-sm" onclick="fillCreds('admin@callcenter.com','password')">Admin — admin@callcenter.com</button>
+        <button class="btn btn-secondary btn-sm" onclick="fillCreds('laura@callcenter.com','password')">Supervisor — laura@callcenter.com</button>
+        <button class="btn btn-secondary btn-sm" onclick="fillCreds('ana@callcenter.com','password')">Agente — ana@callcenter.com</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/js/app.js"></script>
+<script>
+  // Redirect if already logged in
+  if (Auth.isLoggedIn()) window.location.href = '/pages/dashboard.html';
+
+  const fillCreds = (email, pass) => {
+    document.getElementById('email').value = email;
+    document.getElementById('password').value = pass;
+  };
+
+  const doLogin = async () => {
+    const btn = document.getElementById('login-btn');
+    const errEl = document.getElementById('auth-error');
+    errEl.classList.remove('show');
+    btn.textContent = 'Verificando...';
+    btn.disabled = true;
+
+    try {
+      const data = await api.post('/auth/login', {
+        email: document.getElementById('email').value,
+        password: document.getElementById('password').value,
+      });
+      Auth.setSession(data.token, data.user);
+      window.location.href = '/pages/dashboard.html';
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.classList.add('show');
+      btn.textContent = 'Ingresar al sistema';
+      btn.disabled = false;
+    }
+  };
+
+  document.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+</script>
+</body>
+</html>
