@@ -2,7 +2,7 @@
    CALLCENTER PRO - API Client & App Core
    ============================================================ */
 
-const API_BASE = 'http://localhost:3000/api';
+const API_BASE = 'https://callcenter-api.onrender.com';
 
 // ── Token Management ──────────────────────────────────────────
 const Auth = {
